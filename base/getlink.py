@@ -8,6 +8,7 @@ import pandas as pd
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.common.keys import Keys
 
+
 class setup():
     def __init__(self):
         self.link = 'https://congbothongtin.ssc.gov.vn/faces/NewsSearch'
@@ -27,73 +28,120 @@ class setup():
 
 
 class get(setup):
-    def login(self, symbol, year, finan):
+    def login(self, symbol, year, type_time):
         self.driver.get(self.link)
         # self.getlink(self.link)
         time.sleep(0.5)
-        self.driver.maximize_window()
-        check_element = self.sendelenmet(symbol, year, finan)
+        try:
+            self.driver.maximize_window()
+        except: return self.login(symbol, year, type_time)
+        check_element = self.sendelenmet(symbol, year, type_time)
         if check_element == 'Loi':
             return pd.DataFrame({'Nothing':[]})
-        time.sleep(5)
-        # self.driver.close()
+        time.sleep(2)
         data = self.read_table()
+        if type(data) == str: 
+            return pd.DataFrame({'Nothing':[]})
+        for type_finan in range(2, 5):
+            try:
+                self.driver.find_element_by_id(f'pt2:tab{type_finan}::disAcr').click()
+                time.sleep(2)
+                data_new = self.read_table()
+                time.sleep(1)
+                data = pd.concat([data, data_new])
+            except: return self.login(symbol, year, type_time)
         return data
 
-    def getlink(self, link):
-        try:
-            self.driver.set_page_load_timeout(10)
-            self.driver.get(link)
-        except:
-            print('hi')
-            # self.driver.refresh()
-            self.getlink(link)
 
-    def sendelenmet(self, symbol, year, finan):
+    def sendelenmet(self, symbol, year, type_time):
         self.driver.find_element_by_id('pt9:it8112::content').send_keys(symbol)
         time.sleep(0.5)
         self.driver.find_element_by_id('pt9:it8112::content').send_keys(Keys.ENTER)
         self.driver.find_element_by_id('pt9:smc2::content').click()
         time.sleep(0.5)
-        self.driver.find_element_by_xpath('//*[@id="pt9:smc2::pop"]/li[2]/ul/li[11]/label/input').click()
-        time.sleep(0.5)
-        self.driver.find_element_by_xpath('//*[@id="pt9:smc2::pop"]/li[2]/ul/li[11]/label/input').send_keys(Keys.ENTER)
+        if type_time == 'NAM':
+            xpath_bctc = '//*[@id="pt9:smc2::pop"]/li[2]/ul/li[11]/label/input'
+        else: 
+            xpath_bctc = '//*[@id="pt9:smc2::pop"]/li[2]/ul/li[12]/label'
+        self.driver.find_element_by_xpath(xpath_bctc).click()
+        time.sleep(0.5) 
+        self.driver.find_element_by_xpath(xpath_bctc).send_keys(Keys.ENTER)
         self.driver.find_element_by_id('pt9:b1').click()
         time.sleep(7)
-        id = self.ChooseLink_table(year)
-        print(id)
+        id = self.ChooseLink_table(year, type_time)
+        # print(id)
         if id == None:
             return 'Loi'
         self.driver.find_element_by_id(id).click()
-        time.sleep(1)
-        if finan == 'IS':
-            self.driver.find_element_by_id('pt2:tab2::disAcr').click()
+        time.sleep(3)
+        action = webdriver.ActionChains(self.driver)
+        element = self.driver.find_element_by_id('pt2:tab1::disAcr') # or your another selector here
+        action.move_to_element(element)
+        action.perform()
+        try:
+            self.driver.find_element_by_id('pt2:tab1::disAcr').click()
+        except:
+            print('Dont click')
+        time.sleep(6)
         
-    def Choose_id(self, year):
+    def Choose_id(self, year, type_time):
         driver_page_source = self.driver.page_source
         page = BeautifulSoup(driver_page_source, "html.parser")
         check = page.find('table', {'role':'presentation',"class":"x14q x15f"})
-        span_page = check.find_all('a', {'class':'xgl'})
-        for i in span_page:
-            if 'năm' in i.text and year in i.text and 'Riêng' not in i.text:  
-                id = i['id']
+        # span_page = check.find_all('a', {'class':'xgl'})
+        for tr in check.find_all('tr'):
+            list_td = tr.find_all('td')
+            # print(list_td[1]['id'], list_td[3].text)
+            text_tin = str([list_td[3].text.upper(),list_td[1].text.upper()])
+            if type_time == 'NAM':
+                    if 'KIỂM TOÁN' in text_tin and year in text_tin:
+                        if  'RIÊNG' not in text_tin and 'MẸ' not in text_tin:
+                            if '6 THÁNG ĐẦU NĂM' not in text_tin and 'BÁN NIÊN' not in text_tin:
+                                id = list_td[1]['id']
+                                return id
+            else:
+                quy = year[:5]
+                nam = year[-4:]
+                if 'RIÊNG' not in text_tin and 'MẸ' not in text_tin:
+                        # print(nam, quy)
+                        if nam in text_tin or nam in text_tin:
+                            if '1' in quy:
+                                if quy in text_tin or quy.replace('1', 'I') in text_tin:
+                                    if 'II'not in text_tin and 'III' not in text_tin and 'IV' not in text_tin:
+                                        return list_td[1]['id']
+                            if '2' in quy:
+                                if quy in text_tin or quy.replace('2', 'II') in text_tin:
+                                    if 'III'not in text_tin:
+                                        return list_td[1]['id']
+                            if '3' in quy:
+                                if quy in text_tin or quy.replace('3', 'III') in text_tin:
+                                    return list_td[1]['id']
+                            if '4' in quy:
+                                if quy in text_tin or quy.replace('4', 'IV') in text_tin:
+                                    return list_td[1]['id']
+                        
+
+    def ChooseLink_table(self, year, type_time):
+        for i in range(6):
+            time.sleep(2)
+            id = self.Choose_id(year, type_time)
+            if id != None:
                 return id
-    def ChooseLink_table(self, year):
-        id = self.Choose_id(year)
-        if id != None:
-            return id
-        else:
             try:
                 self.driver.find_element_by_id('pt9:t1::nb_nx').click()
                 time.sleep(2)
-                return self.Choose_id(year)
-            except: pass
+            except: break
         
 
     def read_table(self):
-        driver_page_source = self.driver.page_source
+        try:
+            driver_page_source = self.driver.page_source
+        except: 
+            print('Loi roi ngu ngu')
+            return 'Loi'
+        if 'java.lang.NullPointerException' in driver_page_source:
+            return 'Loi'
         page = BeautifulSoup(driver_page_source, "html.parser")
         table = page.find('table', {'role':'presentation',"class":"x14q x15f"})
         data = pd.read_html(str(table))[0]
         return data
-
